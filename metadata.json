@@ -1,0 +1,6 @@
+{
+  "name": "Hajji POS",
+  "description": "نظام نقاط بيع وإدارة متجر متكامل بالدولار والليرة اللبنانية مع إدارة المخزون والمشتريات والمصاريف",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
