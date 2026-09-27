@@ -2,6 +2,8 @@ package com.example.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.net.Uri
+import com.example.data.local.CompanyProfileManager
 import com.example.data.model.*
 import com.example.data.repository.PosRepository
 import kotlinx.coroutines.flow.*
@@ -29,6 +31,8 @@ data class PosUiState(
     val selectedCustomer: CustomerEntity? = null,
     val currentCashier: String = "كاشير 1",
     val currentBranch: String = "الفرع الرئيسي",
+    val companyProfile: CompanyProfile = CompanyProfile(),
+    val isEditCompanyProfileDialogOpen: Boolean = false,
     val userRole: String = "المدير", // المدير, الكاشير, أمين المخزون
     val isReceiptDialogOpen: Boolean = false,
     val lastCompletedSale: SaleEntity? = null,
@@ -61,9 +65,16 @@ data class PosUiState(
         get() = notificationMessage
 }
 
-class PosViewModel(private val repository: PosRepository) : ViewModel() {
+class PosViewModel(
+    private val repository: PosRepository,
+    private val companyProfileManager: CompanyProfileManager? = null
+) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(PosUiState())
+    private val _uiState = MutableStateFlow(
+        PosUiState(
+            companyProfile = companyProfileManager?.getCompanyProfile() ?: CompanyProfile()
+        )
+    )
     val uiState: StateFlow<PosUiState> = _uiState.asStateFlow()
 
     // Data streams from repository
@@ -593,24 +604,76 @@ class PosViewModel(private val repository: PosRepository) : ViewModel() {
     }
 
     // --- Expenses ---
-    fun addExpense(title: String, category: String, amountUsd: Double, notes: String) {
+    fun addExpense(
+        title: String,
+        category: String,
+        amountUsd: Double,
+        notes: String = "",
+        amountLbp: Long? = null,
+        date: Long = System.currentTimeMillis()
+    ) {
         viewModelScope.launch {
             val rate = _uiState.value.exchangeRate
-            val amountLbp = (amountUsd * rate).toLong()
+            val lbp = amountLbp ?: (amountUsd * rate).toLong()
             repository.insertExpense(
                 ExpenseEntity(
                     title = title,
                     category = category,
                     amountUsd = amountUsd,
-                    amountLbp = amountLbp,
+                    amountLbp = lbp,
                     exchangeRate = rate,
+                    date = date,
                     cashierName = _uiState.value.currentCashier,
                     branchName = _uiState.value.currentBranch,
                     notes = notes
                 )
             )
             _uiState.update {
-                it.copy(notificationMessage = "تم تسجيل المصروف: $title بمبلغ $$amountUsd")
+                it.copy(notificationMessage = "✅ تم تسجيل المصروف: $title بمبلغ $${formatUsd(amountUsd)}")
+            }
+        }
+    }
+
+    fun updateExpense(expense: ExpenseEntity) {
+        viewModelScope.launch {
+            repository.updateExpense(expense)
+            _uiState.update {
+                it.copy(notificationMessage = "✅ تم تحديث بيانات المصروف: ${expense.title}")
+            }
+        }
+    }
+
+    fun deleteExpense(expense: ExpenseEntity) {
+        viewModelScope.launch {
+            repository.deleteExpense(expense)
+            _uiState.update {
+                it.copy(notificationMessage = "🗑️ تم حذف المصروف: ${expense.title}")
+            }
+        }
+    }
+
+    // --- Invoices & Sales Modification ---
+    fun updateSale(sale: SaleEntity) {
+        viewModelScope.launch {
+            repository.updateSale(sale)
+            _uiState.update {
+                it.copy(
+                    lastCompletedSale = if (it.lastCompletedSale?.id == sale.id) sale else it.lastCompletedSale,
+                    notificationMessage = "✅ تم تحديث الفاتورة رقم ${sale.invoiceNumber} بنجاح"
+                )
+            }
+        }
+    }
+
+    fun deleteSale(sale: SaleEntity, restoreStock: Boolean = true) {
+        viewModelScope.launch {
+            repository.deleteSaleCompletely(sale.id, restoreStock = restoreStock)
+            _uiState.update {
+                it.copy(
+                    isReceiptDialogOpen = if (it.lastCompletedSale?.id == sale.id) false else it.isReceiptDialogOpen,
+                    lastCompletedSale = if (it.lastCompletedSale?.id == sale.id) null else it.lastCompletedSale,
+                    notificationMessage = "🗑️ تم حذف الفاتورة رقم ${sale.invoiceNumber}" + if (restoreStock) " وإعادة الكميات إلى المخزون" else ""
+                )
             }
         }
     }
@@ -701,6 +764,103 @@ class PosViewModel(private val repository: PosRepository) : ViewModel() {
         _uiState.update { it.copy(currentBranch = branch, currentCashier = cashier) }
     }
 
+    // --- Company Profile & Invoice Logo Management ---
+    fun openEditCompanyProfileDialog() {
+        _uiState.update { it.copy(isEditCompanyProfileDialogOpen = true) }
+    }
+
+    fun dismissEditCompanyProfileDialog() {
+        _uiState.update { it.copy(isEditCompanyProfileDialogOpen = false) }
+    }
+
+    fun updateCompanyProfile(profile: CompanyProfile) {
+        companyProfileManager?.saveCompanyProfile(profile)
+        _uiState.update {
+            it.copy(
+                companyProfile = profile,
+                notificationMessage = "✅ تم حفظ وتحديث بيانات الشركة بنجاح"
+            )
+        }
+    }
+
+    fun updateCompanyLogoFromUri(uri: Uri) {
+        viewModelScope.launch {
+            val savedPath = companyProfileManager?.saveCustomLogoFromUri(uri)
+            if (savedPath != null) {
+                val updated = _uiState.value.companyProfile.copy(logoUri = savedPath)
+                companyProfileManager?.saveCompanyProfile(updated)
+                _uiState.update {
+                    it.copy(
+                        companyProfile = updated,
+                        notificationMessage = "✅ تم تحديث وحفظ شعار الشركة المخصص بنجاح"
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(notificationMessage = "⚠️ تعذر حفظ صورة الشعار، يرجى المحاولة بصيغة أخرى")
+                }
+            }
+        }
+    }
+
+    fun resetCompanyLogoToDefault() {
+        companyProfileManager?.removeCustomLogo()
+        val updated = _uiState.value.companyProfile.copy(logoUri = null)
+        companyProfileManager?.saveCompanyProfile(updated)
+        _uiState.update {
+            it.copy(
+                companyProfile = updated,
+                notificationMessage = "تمت استعادة شعار Hajji POS الافتراضي"
+            )
+        }
+    }
+
+    fun previewSampleReceipt() {
+        val sampleSale = SaleEntity(
+            invoiceNumber = "INV-2026-0001",
+            cashierName = _uiState.value.currentCashier,
+            branchName = _uiState.value.currentBranch,
+            totalUsd = 25.00,
+            totalLbp = (25.00 * _uiState.value.exchangeRate).toLong(),
+            subtotalUsd = 25.00,
+            discountUsd = 0.0,
+            paidUsd = 30.00,
+            paidLbp = 0L,
+            changeUsd = 5.00,
+            changeLbp = 0L,
+            paymentMethod = "CASH_USD",
+            exchangeRateAtSale = _uiState.value.exchangeRate,
+            customerName = "زبون نقدي (معاينة الفاتورة)"
+        )
+        val sampleItems = listOf(
+            SaleItemEntity(
+                saleId = 0,
+                productId = 1,
+                productName = "سماعات بلوتوث لاسلكية TWS Pro",
+                quantity = 1,
+                unitPriceUsd = 15.00,
+                costPriceUsd = 6.50,
+                totalPriceUsd = 15.00
+            ),
+            SaleItemEntity(
+                saleId = 0,
+                productId = 2,
+                productName = "باور بانك 20000mAh شحن سريع",
+                quantity = 1,
+                unitPriceUsd = 10.00,
+                costPriceUsd = 5.00,
+                totalPriceUsd = 10.00
+            )
+        )
+        _uiState.update {
+            it.copy(
+                lastCompletedSale = sampleSale,
+                lastCompletedSaleItems = sampleItems,
+                isReceiptDialogOpen = true
+            )
+        }
+    }
+
     // Currency formatters
     companion object {
         fun formatUsd(amount: Double): String {
@@ -714,11 +874,14 @@ class PosViewModel(private val repository: PosRepository) : ViewModel() {
     }
 }
 
-class PosViewModelFactory(private val repository: PosRepository) : androidx.lifecycle.ViewModelProvider.Factory {
+class PosViewModelFactory(
+    private val repository: PosRepository,
+    private val companyProfileManager: CompanyProfileManager? = null
+) : androidx.lifecycle.ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(PosViewModel::class.java)) {
-            return PosViewModel(repository) as T
+            return PosViewModel(repository, companyProfileManager) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
     }

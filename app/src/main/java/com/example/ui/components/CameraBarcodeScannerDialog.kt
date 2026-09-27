@@ -126,6 +126,7 @@ fun CameraBarcodeScannerDialog(
     var lastScannedCode by remember { mutableStateOf<String?>(null) }
     var scanStatusMessage by remember { mutableStateOf<String?>(null) }
     var manualInputBarcode by remember { mutableStateOf("") }
+    var scannedItemsCount by remember { mutableStateOf(0) }
 
     fun playPosBeep() {
         try {
@@ -157,7 +158,8 @@ fun CameraBarcodeScannerDialog(
         if (matchedProduct != null) {
             playPosBeep()
             vibrateFeedback()
-            scanStatusMessage = "✅ تم مسح وإضافة: ${matchedProduct.name} ($${matchedProduct.sellingPriceUsd})"
+            scannedItemsCount++
+            scanStatusMessage = "✅ تمت إضافة (${matchedProduct.name}) — إجمالي الجلسة: $scannedItemsCount"
             onProductFound(matchedProduct)
             if (!continuousMode) {
                 onDismiss()
@@ -436,27 +438,45 @@ fun CameraBarcodeScannerDialog(
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = "أكواد تجريبية:", fontSize = 11.sp, color = Color.Gray)
-                            products.take(2).forEach { prod ->
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = MaterialTheme.colorScheme.surface,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .border(1.dp, Color.LightGray.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
-                                ) {
-                                    Text(
-                                        text = "${prod.name} (${prod.barcode})",
-                                        fontSize = 10.sp,
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = "أكواد تجريبية:", fontSize = 11.sp, color = Color.Gray)
+                                products.take(2).forEach { prod ->
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = MaterialTheme.colorScheme.surface,
                                         modifier = Modifier
-                                            .padding(horizontal = 6.dp, vertical = 3.dp),
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .border(1.dp, Color.LightGray.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                                    ) {
+                                        Text(
+                                            text = "${prod.name} (${prod.barcode})",
+                                            fontSize = 10.sp,
+                                            modifier = Modifier
+                                                .padding(horizontal = 6.dp, vertical = 3.dp),
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
                                 }
                             }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Button(
+                            onClick = onDismiss,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp)
+                        ) {
+                            Text("إنهاء والعودة للسلة ($scannedItemsCount صنف تم مسحها)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
                 }
@@ -520,8 +540,8 @@ private fun CameraXPreviewView(
                             imageProxy = imageProxy,
                             onSuccess = { rawCode ->
                                 val now = System.currentTimeMillis()
-                                // 1.2 second debounce to prevent rapid duplicate reading
-                                if (now - lastScanTimestamp > 1200) {
+                                // 450ms debounce for rapid continuous barcode scanning
+                                if (now - lastScanTimestamp > 450) {
                                     lastScanTimestamp = now
                                     previewView.post {
                                         onBarcodeDetected(rawCode)

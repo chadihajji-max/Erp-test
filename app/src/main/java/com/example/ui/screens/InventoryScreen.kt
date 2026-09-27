@@ -193,9 +193,14 @@ fun InventoryScreen(
                 val isLow = product.stockQuantity <= product.minStockLevel
 
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isLow) Color(0xFFFFF5F5) else MaterialTheme.colorScheme.surface
+                    ),
                     shape = RoundedCornerShape(10.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                    border = androidx.compose.foundation.BorderStroke(
+                        width = if (isLow) 2.dp else 1.dp,
+                        color = if (isLow) RedAlert else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
@@ -205,30 +210,70 @@ fun InventoryScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = product.name,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = product.name,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    if (isLow) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            color = Color(0xFFFEE2E2),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.NotificationsActive,
+                                                    contentDescription = "تنبيه نقص المخزون",
+                                                    tint = RedAlert,
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(3.dp))
+                                                Text(
+                                                    text = "تحذير: تحت الحد (${product.minStockLevel})",
+                                                    color = RedAlert,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                                 Text(
                                     text = "فئة: ${product.category} | باركود: ${product.barcode} | وحدة: ${product.unit}",
                                     fontSize = 11.sp,
                                     color = Color.Gray
                                 )
                             }
-
                             // Stock status badge
                             Surface(
                                 color = if (isLow) Color(0xFFFEE2E2) else Color(0xFFE6F8F0),
                                 shape = RoundedCornerShape(6.dp)
                             ) {
-                                Text(
-                                    text = "المخزون: ${product.stockQuantity} ${product.unit}",
-                                    color = if (isLow) RedAlert else EmeraldPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (isLow) {
+                                        Icon(
+                                            Icons.Default.Warning,
+                                            contentDescription = null,
+                                            tint = RedAlert,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                    }
+                                    Text(
+                                        text = "المخزون: ${product.stockQuantity} ${product.unit}",
+                                        color = if (isLow) RedAlert else EmeraldPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
                             }
                         }
 

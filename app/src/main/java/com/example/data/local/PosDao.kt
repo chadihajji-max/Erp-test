@@ -1,6 +1,7 @@
 package com.example.data.local
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -109,6 +110,9 @@ interface PosDao {
     @Query("DELETE FROM sales WHERE id = :id")
     suspend fun deleteSale(id: Long)
 
+    @Query("DELETE FROM sale_items WHERE saleId = :saleId")
+    suspend fun deleteSaleItemsBySaleId(saleId: Long)
+
     // --- Sale Items ---
     @Query("SELECT * FROM sale_items WHERE saleId = :saleId")
     suspend fun getItemsForSale(saleId: Long): List<SaleItemEntity>
@@ -145,6 +149,15 @@ interface PosDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertExpense(expense: ExpenseEntity): Long
+
+    @Update
+    suspend fun updateExpense(expense: ExpenseEntity)
+
+    @Delete
+    suspend fun deleteExpense(expense: ExpenseEntity)
+
+    @Query("DELETE FROM expenses WHERE id = :id")
+    suspend fun deleteExpenseById(id: Long)
 
     // --- Shifts ---
     @Query("SELECT * FROM shifts ORDER BY startTime DESC")

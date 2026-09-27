@@ -257,4 +257,23 @@ class PosRepository(private val dao: PosDao) {
             dao.settleCustomerDebt(sale.customerId, sale.totalUsd)
         }
     }
+
+    // Expense Management
+    suspend fun updateExpense(expense: ExpenseEntity) = dao.updateExpense(expense)
+    suspend fun deleteExpense(expense: ExpenseEntity) = dao.deleteExpense(expense)
+    suspend fun deleteExpenseById(id: Long) = dao.deleteExpenseById(id)
+
+    // Invoice / Sale Management
+    suspend fun updateSale(sale: SaleEntity) = dao.updateSale(sale)
+
+    suspend fun deleteSaleCompletely(saleId: Long, restoreStock: Boolean = true) {
+        if (restoreStock) {
+            val items = dao.getItemsForSale(saleId)
+            items.forEach { item ->
+                dao.addStock(item.productId, item.quantity)
+            }
+        }
+        dao.deleteSaleItemsBySaleId(saleId)
+        dao.deleteSale(saleId)
+    }
 }

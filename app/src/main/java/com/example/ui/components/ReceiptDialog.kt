@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import android.content.Intent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -12,10 +13,12 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -23,9 +26,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import coil.compose.AsyncImage
+import com.example.data.model.CompanyProfile
 import com.example.data.model.SaleEntity
 import com.example.data.model.SaleItemEntity
 import com.example.ui.PosViewModel
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -37,6 +43,7 @@ import com.example.R
 fun ReceiptDialog(
     sale: SaleEntity?,
     items: List<SaleItemEntity>,
+    companyProfile: CompanyProfile = CompanyProfile(),
     onDismiss: () -> Unit,
     onPrint: () -> Unit
 ) {
@@ -44,7 +51,13 @@ fun ReceiptDialog(
     val context = LocalContext.current
     val dateStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(sale.timestamp))
 
+    var showBluetoothDialog by remember { mutableStateOf(false) }
+
     Dialog(onDismissRequest = onDismiss) {
+        if (showBluetoothDialog) {
+            BluetoothPrinterDialog(onDismiss = { showBluetoothDialog = false })
+        }
+
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -91,16 +104,46 @@ fun ReceiptDialog(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.fillMaxWidth()
                     ) {
+                        // Customer Receipt Logo (Custom Uploaded or Default)
+                        if (companyProfile.hasCustomLogo && File(companyProfile.logoUri!!).exists()) {
+                            AsyncImage(
+                                model = File(companyProfile.logoUri),
+                                contentDescription = "شعار الشركة",
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .padding(bottom = 6.dp)
+                                    .clip(RoundedCornerShape(6.dp)),
+                                contentScale = ContentScale.Fit
+                            )
+                        } else {
+                            Image(
+                                painter = painterResource(id = R.drawable.img_receipt_logo),
+                                contentDescription = "شعار Hajji POS",
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .padding(bottom = 6.dp)
+                            )
+                        }
+
                         Text(
-                            text = "HAJJI STORE / متجر حجّي",
+                            text = companyProfile.companyName,
                             fontWeight = FontWeight.Black,
-                            fontSize = 18.sp,
+                            fontSize = 17.sp,
+                            textAlign = TextAlign.Center,
+                            letterSpacing = 0.5.sp
+                        )
+                        Text(
+                            text = "${companyProfile.address} | هاتف: ${companyProfile.phone}",
+                            fontSize = 11.sp,
+                            color = Color.DarkGray,
                             textAlign = TextAlign.Center
                         )
                         Text(
-                            text = "بيروت - لبنان | هاتف: 01-889900",
-                            fontSize = 12.sp,
-                            color = Color.DarkGray
+                            text = "الرقم الضريبي (TVA / VAT): ${companyProfile.taxNumber}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1E293B),
+                            textAlign = TextAlign.Center
                         )
                         Text(
                             text = "الفرع: ${sale.branchName} | الكاشير: ${sale.cashierName}",
@@ -315,7 +358,7 @@ fun ReceiptDialog(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "شكراً لزيارتكم! البضاعة المباعة تستبدل خلال 3 أيام مع الفاتورة",
+                            text = companyProfile.receiptFooterNote,
                             fontSize = 10.sp,
                             textAlign = TextAlign.Center,
                             color = Color.Gray
@@ -328,7 +371,12 @@ fun ReceiptDialog(
                 // Actions: Prominent WhatsApp Button
                 Button(
                     onClick = {
-                        sendInvoiceViaWhatsApp(context = context, sale = sale, items = items)
+                        sendInvoiceViaWhatsApp(
+                            context = context,
+                            sale = sale,
+                            items = items,
+                            companyProfile = companyProfile
+                        )
                     },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
@@ -359,7 +407,18 @@ fun ReceiptDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = onPrint,
+                        onClick = {
+                            if (BluetoothThermalPrinterManager.isConnected()) {
+                                val success = BluetoothThermalPrinterManager.printReceipt(sale, items, companyProfile)
+                                if (success) {
+                                    android.widget.Toast.makeText(context, "✅ تم إرسال الفاتورة للطابعة الحرارية بنجاح", android.widget.Toast.LENGTH_SHORT).show()
+                                } else {
+                                    android.widget.Toast.makeText(context, "❌ فشل الطباعة عبر البلوتوث", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                showBluetoothDialog = true
+                            }
+                        },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         shape = RoundedCornerShape(10.dp)
@@ -371,7 +430,7 @@ fun ReceiptDialog(
 
                     OutlinedButton(
                         onClick = {
-                            val msg = formatInvoiceText(sale, items)
+                            val msg = formatInvoiceText(sale, items, companyProfile)
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 putExtra(Intent.EXTRA_TEXT, msg)
@@ -394,7 +453,11 @@ fun ReceiptDialog(
 /**
  * تنسيق نص الفاتورة لمشاركته عبر واتساب أو الرسائل
  */
-fun formatInvoiceText(sale: SaleEntity, items: List<SaleItemEntity>): String {
+fun formatInvoiceText(
+    sale: SaleEntity,
+    items: List<SaleItemEntity>,
+    companyProfile: CompanyProfile = CompanyProfile()
+): String {
     val dateStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(sale.timestamp))
     val itemsLines = if (items.isNotEmpty()) {
         items.joinToString("\n") { item ->
@@ -413,8 +476,9 @@ fun formatInvoiceText(sale: SaleEntity, items: List<SaleItemEntity>): String {
     }
 
     return buildString {
-        appendLine("🧾 *إيصال شراء - متجر حجّي (HAJJI STORE)*")
-        appendLine("📍 بيروت - لبنان | هاتف: 01-889900")
+        appendLine("🧾 *إيصال شراء - ${companyProfile.companyName}*")
+        appendLine("📍 ${companyProfile.address} | 📞 هاتف: ${companyProfile.phone}")
+        appendLine("🏷️ *الرقم الضريبي (TVA):* ${companyProfile.taxNumber}")
         appendLine("━━━━━━━━━━━━━━━━━━━")
         appendLine("🔢 *رقم الفاتورة:* ${sale.invoiceNumber}")
         appendLine("📅 *التاريخ:* $dateStr")
@@ -439,7 +503,7 @@ fun formatInvoiceText(sale: SaleEntity, items: List<SaleItemEntity>): String {
         if (sale.changeUsd > 0) appendLine("• الباقي دولار: ${PosViewModel.formatUsd(sale.changeUsd)}")
         if (sale.changeLbp > 0) appendLine("• الباقي ليرة: ${PosViewModel.formatLbp(sale.changeLbp)}")
         appendLine("━━━━━━━━━━━━━━━━━━━")
-        appendLine("شكراً لتسوقكم معنا! البضاعة تستبدل خلال 3 أيام مع إبراز الفاتورة.")
+        appendLine(companyProfile.receiptFooterNote)
     }
 }
 
@@ -450,9 +514,10 @@ fun sendInvoiceViaWhatsApp(
     context: android.content.Context,
     sale: SaleEntity,
     items: List<SaleItemEntity>,
-    customerPhone: String? = null
+    customerPhone: String? = null,
+    companyProfile: CompanyProfile = CompanyProfile()
 ) {
-    val message = formatInvoiceText(sale, items)
+    val message = formatInvoiceText(sale, items, companyProfile)
     val encodedMessage = try {
         java.net.URLEncoder.encode(message, "UTF-8")
     } catch (e: Exception) {
